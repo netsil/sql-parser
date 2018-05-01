@@ -19,6 +19,19 @@ namespace hsql {
     kTableCrossProduct
   };
 
+  struct TableName {
+    char* schema;
+    char* name;
+  };
+
+  struct Alias {
+    Alias(char* name, std::vector<char*>* columns = nullptr);
+    ~Alias();
+
+    char* name;
+    std::vector<char*>* columns;
+  };
+
   // Holds reference to tables. Can be either table names or a select statement.
   struct TableRef {
     TableRef(TableRefType type);
@@ -28,7 +41,7 @@ namespace hsql {
 
     char* schema;
     char* name;
-    char* alias;
+    Alias* alias;
 
     SelectStatement* select;
     std::vector<TableRef*>* list;
@@ -44,11 +57,9 @@ namespace hsql {
   // Possible types of joins.
   enum JoinType {
     kJoinInner,
-    kJoinOuter,
+    kJoinFull,
     kJoinLeft,
     kJoinRight,
-    kJoinLeftOuter,
-    kJoinRightOuter,
     kJoinCross,
     kJoinNatural
   };

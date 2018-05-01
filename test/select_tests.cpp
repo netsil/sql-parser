@@ -88,6 +88,18 @@ TEST(SelectDistinctTest) {
   ASSERT_NULL(stmt->whereClause);
 }
 
+TEST(SelectSchemaTest) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT grade FROM some_schema.students;",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+  ASSERT(stmt->fromTable);
+  ASSERT_EQ(std::string(stmt->fromTable->schema), "some_schema");
+}
+
 TEST(SelectGroupDistinctTest) {
   TEST_PARSE_SINGLE_SQL(
     "SELECT city, COUNT(name), COUNT(DISTINCT grade) FROM students GROUP BY city;",
@@ -202,9 +214,74 @@ TEST(SelectCaseWhen) {
   ASSERT_NOTNULL(caseExpr);
   ASSERT(caseExpr->isType(kExprOperator));
   ASSERT_EQ(caseExpr->opType, kOpCase);
-  ASSERT(caseExpr->expr->isType(kExprOperator));
-  ASSERT_EQ(caseExpr->expr->opType, kOpEquals);
+  ASSERT_NULL(caseExpr->expr);
+  ASSERT_NOTNULL(caseExpr->exprList);
+  ASSERT_NOTNULL(caseExpr->expr2);
+  ASSERT_EQ(caseExpr->exprList->size(), 1);
+  ASSERT(caseExpr->expr2->isType(kExprLiteralInt));
+
+  Expr* whenExpr = caseExpr->exprList->at(0);
+  ASSERT(whenExpr->expr->isType(kExprOperator));
+  ASSERT_EQ(whenExpr->expr->opType, kOpEquals);
+  ASSERT(whenExpr->expr->expr->isType(kExprColumnRef));
+  ASSERT(whenExpr->expr->expr2->isType(kExprLiteralString));
+}
+
+TEST(SelectCaseWhenWhen) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT CASE WHEN x = 1 THEN 1 WHEN 1.25 < x THEN 2 END FROM test;",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+  ASSERT_EQ(stmt->selectList->size(), 1);
+  Expr* caseExpr = stmt->selectList->at(0);
+  ASSERT_NOTNULL(caseExpr);
+  ASSERT(caseExpr->isType(kExprOperator));
+  ASSERT_EQ(caseExpr->opType, kOpCase);
+  // CASE [expr] [exprList]                                    [expr2]
+  //             [expr]                  [expr]
+  //             [expr]     [expr2]      [expr]        [expr2]
+  // CASE (null) WHEN X = 1 THEN 1       WHEN 1.25 < x THEN 2  (null)
+  ASSERT_NULL(caseExpr->expr);
+  ASSERT_NOTNULL(caseExpr->exprList);
+  ASSERT_NULL(caseExpr->expr2);
   ASSERT_EQ(caseExpr->exprList->size(), 2);
+
+  Expr* whenExpr = caseExpr->exprList->at(0);
+  ASSERT_EQ(whenExpr->expr->opType, kOpEquals);
+  ASSERT(whenExpr->expr->expr->isType(kExprColumnRef));
+  ASSERT(whenExpr->expr->expr2->isType(kExprLiteralInt));
+
+  Expr* whenExpr2 = caseExpr->exprList->at(1);
+  ASSERT_EQ(whenExpr2->expr->opType, kOpLess);
+  ASSERT(whenExpr2->expr->expr->isType(kExprLiteralFloat));
+  ASSERT(whenExpr2->expr->expr2->isType(kExprColumnRef));
+}
+
+TEST(SelectCaseValueWhenWhenElse) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT CASE x WHEN 1 THEN 0 WHEN 2 THEN 3 WHEN 8 THEN 7 ELSE 4 END FROM test;",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+  ASSERT_EQ(stmt->selectList->size(), 1);
+  Expr* caseExpr = stmt->selectList->at(0);
+  ASSERT_NOTNULL(caseExpr);
+  ASSERT(caseExpr->isType(kExprOperator));
+  ASSERT_EQ(caseExpr->opType, kOpCase);
+  ASSERT_NOTNULL(caseExpr->expr);
+  ASSERT_NOTNULL(caseExpr->exprList);
+  ASSERT_NOTNULL(caseExpr->expr2);
+  ASSERT_EQ(caseExpr->exprList->size(), 3);
+  ASSERT(caseExpr->expr->isType(kExprColumnRef));
+
+  Expr* whenExpr = caseExpr->exprList->at(2);
+  ASSERT(whenExpr->expr->isType(kExprLiteralInt));
+  ASSERT_EQ(whenExpr->expr2->ival, 7);
 }
 
 TEST(SelectJoin) {
@@ -221,7 +298,7 @@ TEST(SelectJoin) {
   const TableRef* table = stmt->fromTable;
   const JoinDefinition* outer_join = table->join;
   ASSERT_EQ(table->type, kTableJoin);
-  ASSERT_EQ(outer_join->type, kJoinOuter);
+  ASSERT_EQ(outer_join->type, kJoinFull);
 
   ASSERT_EQ(outer_join->right->type, kTableName);
   ASSERT_STREQ(outer_join->right->name, "Product");
@@ -248,3 +325,220 @@ TEST(SelectJoin) {
   ASSERT_STREQ(inner_join->condition->expr2->table, "City");
   ASSERT_STREQ(inner_join->condition->expr2->name, "id");
 }
+
+
+TEST(SelectColumnOrder) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT *\
+    FROM a,\
+         (SELECT a AS b FROM a) b,\
+         (SELECT a AS c FROM a) c,\
+         (SELECT a AS d FROM a) d;",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+  ASSERT_EQ(stmt->fromTable->list->size(), 4);
+
+  // Make sure the order of the table list is corrects
+  ASSERT_STREQ(stmt->fromTable->list->at(0)->name, "a");
+  ASSERT_STREQ(stmt->fromTable->list->at(1)->alias->name, "b");
+  ASSERT_STREQ(stmt->fromTable->list->at(2)->alias->name, "c");
+  ASSERT_STREQ(stmt->fromTable->list->at(3)->alias->name, "d");
+}
+
+
+TEST(SelectAliasAbsent) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT * FROM students;",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+    ASSERT_NULL(stmt->fromTable->alias);
+}
+
+TEST(SelectAliasSimple) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT * FROM students AS s1;",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+    Alias* alias = stmt->fromTable->alias;
+    ASSERT_NOTNULL(alias);
+    ASSERT_STREQ(alias->name, "s1");
+    ASSERT_NULL(alias->columns);
+}
+
+TEST(SelectAliasWithColumns) {
+  TEST_PARSE_SINGLE_SQL(
+    "SELECT * FROM students AS s1(id, city);",
+    kStmtSelect,
+    SelectStatement,
+    result,
+    stmt);
+
+    Alias* alias = stmt->fromTable->alias;
+    ASSERT_NOTNULL(alias);
+
+    ASSERT_NOTNULL(alias->name);
+    ASSERT_STREQ(alias->name, "s1");
+
+    ASSERT_NOTNULL(alias->columns);
+    ASSERT_EQ(alias->columns->size(), 2);
+    ASSERT_STREQ(alias->columns->at(0), "id");
+    ASSERT_STREQ(alias->columns->at(1), "city");
+}
+
+TEST(Operators) {
+  SelectStatement* stmt;
+  SQLParserResult result;
+
+  SQLParser::parse("SELECT * FROM foo where a =  1; \
+		    SELECT * FROM foo where a == 1; \
+		    SELECT * FROM foo where a != 1; \
+		    SELECT * FROM foo where a <> 1; \
+		    SELECT * FROM foo where a >  1; \
+		    SELECT * FROM foo where a <  1; \
+		    SELECT * FROM foo where a >= 1; \
+		    SELECT * FROM foo where a <= 1;", &result);
+
+  stmt = (SelectStatement*) result.getStatement(0);
+  ASSERT_EQ(stmt->whereClause->opType, kOpEquals);
+
+  stmt = (SelectStatement*) result.getStatement(1);
+  ASSERT_EQ(stmt->whereClause->opType, kOpEquals);
+
+  stmt = (SelectStatement*) result.getStatement(2);
+  ASSERT_EQ(stmt->whereClause->opType, kOpNotEquals);
+
+  stmt = (SelectStatement*) result.getStatement(3);
+  ASSERT_EQ(stmt->whereClause->opType, kOpNotEquals);
+
+  stmt = (SelectStatement*) result.getStatement(4);
+  ASSERT_EQ(stmt->whereClause->opType, kOpGreater);
+
+  stmt = (SelectStatement*) result.getStatement(5);
+  ASSERT_EQ(stmt->whereClause->opType, kOpLess);
+
+  stmt = (SelectStatement*) result.getStatement(6);
+  ASSERT_EQ(stmt->whereClause->opType, kOpGreaterEq);
+
+  stmt = (SelectStatement*) result.getStatement(7);
+  ASSERT_EQ(stmt->whereClause->opType, kOpLessEq);
+}
+
+TEST(JoinTypes) {
+  SelectStatement* stmt;
+  SQLParserResult result;
+
+  SQLParser::parse("SELECT * FROM x join y on a=b; \
+		    SELECT * FROM x inner join y on a=b; \
+		    SELECT * FROM x left join y on a=b; \
+		    SELECT * FROM x left outer join y on a=b; \
+		    SELECT * FROM x right join y on a=b; \
+		    SELECT * FROM x right outer join y on a=b; \
+		    SELECT * FROM x full join y on a=b; \
+		    SELECT * FROM x outer join y on a=b; \
+		    SELECT * FROM x full outer join y on a=b; \
+		    SELECT * FROM x natural join y; \
+		    SELECT * FROM x cross join y on a=b; \
+		    SELECT * FROM x, y where a = b;", &result);
+
+  stmt = (SelectStatement*) result.getStatement(0);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinInner);
+
+  stmt = (SelectStatement*) result.getStatement(1);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinInner);
+
+  stmt = (SelectStatement*) result.getStatement(2);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinLeft);
+
+  stmt = (SelectStatement*) result.getStatement(3);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinLeft);
+
+  stmt = (SelectStatement*) result.getStatement(4);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinRight);
+
+  stmt = (SelectStatement*) result.getStatement(5);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinRight);
+
+  stmt = (SelectStatement*) result.getStatement(6);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinFull);
+
+  stmt = (SelectStatement*) result.getStatement(7);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinFull);
+ 
+  stmt = (SelectStatement*) result.getStatement(8);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinFull);
+
+  stmt = (SelectStatement*) result.getStatement(9);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinNatural);
+
+  stmt = (SelectStatement*) result.getStatement(10);
+  ASSERT_EQ(stmt->fromTable->join->type, kJoinCross);
+
+  stmt = (SelectStatement*) result.getStatement(11);
+  ASSERT_NULL(stmt->fromTable->join);
+}
+
+TEST(SetLimitOffset) {
+  SelectStatement* stmt;
+
+  TEST_PARSE_SQL_QUERY("select a from t1 limit 1; \
+                    select a from t1 limit 1 offset 1; \
+                    select a from t1 limit 0; \
+                    select a from t1 limit 0 offset 1; \
+                    select a from t1 limit 1 offset 0; \
+                    select a from t1 limit ALL offset 1; \
+                    select a from t1 limit NULL offset 1; \
+                    select a from t1 offset 1; \
+                    select top 10 a from t1; \
+                    select top 20 a from t1 limit 10;",
+        result, 10);
+
+  stmt = (SelectStatement*) result.getStatement(0);
+  ASSERT_EQ(stmt->limit->limit, 1);
+  ASSERT_EQ(stmt->limit->offset, kNoOffset);
+
+  stmt = (SelectStatement*) result.getStatement(1);
+  ASSERT_EQ(stmt->limit->limit, 1);
+  ASSERT_EQ(stmt->limit->offset, 1);
+
+  stmt = (SelectStatement*) result.getStatement(2);
+  ASSERT_EQ(stmt->limit->limit, 0);
+  ASSERT_EQ(stmt->limit->offset, kNoOffset);
+
+  stmt = (SelectStatement*) result.getStatement(3);
+  ASSERT_EQ(stmt->limit->limit, 0);
+  ASSERT_EQ(stmt->limit->offset, 1);
+
+  stmt = (SelectStatement*) result.getStatement(4);
+  ASSERT_EQ(stmt->limit->limit, 1);
+  ASSERT_EQ(stmt->limit->offset, kNoOffset);
+
+  stmt = (SelectStatement*) result.getStatement(5);
+  ASSERT_EQ(stmt->limit->limit, kNoLimit);
+    ASSERT_EQ(stmt->limit->offset, 1);
+
+  stmt = (SelectStatement*) result.getStatement(6);
+  ASSERT_EQ(stmt->limit->limit, kNoLimit);
+  ASSERT_EQ(stmt->limit->offset, 1);
+
+  stmt = (SelectStatement*) result.getStatement(7);
+  ASSERT_EQ(stmt->limit->limit, kNoLimit);
+  ASSERT_EQ(stmt->limit->offset, 1);
+
+  stmt = (SelectStatement*) result.getStatement(8);
+  ASSERT_EQ(stmt->limit->limit, 10);
+  ASSERT_EQ(stmt->limit->offset, kNoOffset);
+
+  stmt = (SelectStatement*) result.getStatement(9);
+  ASSERT_EQ(stmt->limit->limit, 10);
+  ASSERT_EQ(stmt->limit->offset, kNoOffset);
+}
+

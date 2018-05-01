@@ -18,6 +18,7 @@ namespace hsql {
     type(type),
     ifNotExists(false),
     filePath(nullptr),
+    schema(nullptr),
     tableName(nullptr),
     columns(nullptr),
     viewColumns(nullptr),
@@ -25,6 +26,7 @@ namespace hsql {
 
   CreateStatement::~CreateStatement() {
     free(filePath);
+    free(schema);
     free(tableName);
     delete select;
 
@@ -46,10 +48,12 @@ namespace hsql {
   // DeleteStatement
   DeleteStatement::DeleteStatement() :
     SQLStatement(kStmtDelete),
+    schema(nullptr),
     tableName(nullptr),
     expr(nullptr) {};
 
   DeleteStatement::~DeleteStatement() {
+    free(schema);
     free(tableName);
     delete expr;
   }
@@ -58,9 +62,11 @@ namespace hsql {
   DropStatement::DropStatement(DropType type) :
     SQLStatement(kStmtDrop),
     type(type),
+    schema(nullptr),
     name(nullptr) {}
 
   DropStatement::~DropStatement() {
+    free(schema);
     free(name);
   }
 
@@ -86,23 +92,27 @@ namespace hsql {
     SQLStatement(kStmtImport),
     type(type),
     filePath(nullptr),
+    schema(nullptr),
     tableName(nullptr) {};
 
   ImportStatement::~ImportStatement() {
-    delete filePath;
-    delete tableName;
+    free(filePath);
+    free(schema);
+    free(tableName);
   }
 
   // InsertStatement
   InsertStatement::InsertStatement(InsertType type) :
     SQLStatement(kStmtInsert),
     type(type),
+    schema(nullptr),
     tableName(nullptr),
     columns(nullptr),
     values(nullptr),
     select(nullptr) {}
 
   InsertStatement::~InsertStatement() {
+    free(schema);
     free(tableName);
     delete select;
 
@@ -121,6 +131,18 @@ namespace hsql {
     }
   }
 
+  // ShowStatament
+  ShowStatement::ShowStatement(ShowType type) :
+    SQLStatement(kStmtShow),
+    type(type),
+    schema(nullptr),
+    name(nullptr) {}
+
+  ShowStatement::~ShowStatement() {
+    free(schema);
+    free(name);
+  }
+
   // SelectStatement.h
 
   // OrderDescription
@@ -134,8 +156,8 @@ namespace hsql {
 
   // LimitDescription
   LimitDescription::LimitDescription(int64_t limit, int64_t offset) :
-    limit(limit),
-    offset(offset) {}
+    limit(limit >= 0 ? limit : kNoLimit),
+    offset(offset > 0 ? offset : kNoOffset) {}
 
   // GroypByDescription
   GroupByDescription::GroupByDescription() :
@@ -209,6 +231,21 @@ namespace hsql {
     }
   }
 
+  // Alias
+  Alias::Alias(char* name, std::vector<char*>* columns) :
+    name(name),
+    columns(columns) {}
+
+  Alias::~Alias() {
+    free(name);
+    if (columns) {
+      for (char* column : *columns) {
+        free(column);
+      }
+      delete columns;
+    }
+  }
+
   // TableRef
   TableRef::TableRef(TableRefType type) :
     type(type),
@@ -222,10 +259,10 @@ namespace hsql {
   TableRef::~TableRef() {
     free(schema);
     free(name);
-    free(alias);
 
     delete select;
     delete join;
+    delete alias;
 
     if (list != nullptr) {
       for (TableRef* table : *list) {
@@ -240,7 +277,7 @@ namespace hsql {
   }
 
   const char* TableRef::getName() const {
-    if (alias != nullptr) return alias;
+    if (alias) return alias->name;
     else return name;
   }
 

@@ -6,6 +6,7 @@
 namespace hsql {
 
   void printOperatorExpression(Expr* expr, uintmax_t numIndent);
+  void printAlias(Alias* alias, uintmax_t numIndent);
 
   std::string indent(uintmax_t numIndent) {
     return std::string(numIndent, '\t');
@@ -33,6 +34,10 @@ namespace hsql {
     switch (table->type) {
     case kTableName:
       inprint(table->name, numIndent);
+      if(table->schema)  {
+        inprint("Schema", numIndent + 1);
+        inprint(table->schema, numIndent + 2);
+      }
       break;
     case kTableSelect:
       printSelectStatementInfo(table->select, numIndent);
@@ -50,9 +55,20 @@ namespace hsql {
       for (TableRef* tbl : *table->list) printTableRefInfo(tbl, numIndent);
       break;
     }
-    if (table->alias != nullptr) {
-      inprint("Alias", numIndent + 1);
-      inprint(table->alias, numIndent + 2);
+
+    if (table->alias) {
+      printAlias(table->alias, numIndent);
+    }
+  }
+
+  void printAlias(Alias* alias, uintmax_t numIndent) {
+    inprint("Alias", numIndent + 1);
+    inprint(alias->name, numIndent + 2);
+
+    if (alias->columns) {
+      for (char* column : *(alias->columns)) {
+        inprint(column, numIndent + 3);
+      }
     }
   }
 
@@ -77,7 +93,11 @@ namespace hsql {
       break;
     }
     printExpression(expr->expr, numIndent + 1);
-    if (expr->expr2 != nullptr) printExpression(expr->expr2, numIndent + 1);
+    if (expr->expr2 != nullptr) {
+        printExpression(expr->expr2, numIndent + 1);
+    } else if (expr->exprList != nullptr) {
+        for (Expr* e : *expr->exprList) printExpression(e, numIndent + 1);
+    }
   }
 
   void printExpression(Expr* expr, uintmax_t numIndent) {
@@ -87,6 +107,10 @@ namespace hsql {
       break;
     case kExprColumnRef:
       inprint(expr->name, numIndent);
+      if(expr->table) {
+        inprint("Table:", numIndent+1);
+        inprint(expr->table, numIndent+2);
+      }
       break;
     // case kExprTableColumnRef: inprint(expr->table, expr->name, numIndent); break;
     case kExprLiteralFloat:
@@ -100,10 +124,23 @@ namespace hsql {
       break;
     case kExprFunctionRef:
       inprint(expr->name, numIndent);
-      inprint(expr->expr->name, numIndent + 1);
+      for (Expr* e : *expr->exprList) printExpression(e, numIndent + 1);
       break;
     case kExprOperator:
       printOperatorExpression(expr, numIndent);
+      break;
+    case kExprSelect:
+      printSelectStatementInfo(expr->select, numIndent);
+      break;
+    case kExprParameter:
+      inprint(expr->ival, numIndent);
+      break;
+    case kExprArray:
+      for (Expr* e : *expr->exprList) printExpression(e, numIndent + 1);
+      break;
+    case kExprArrayIndex:
+      printExpression(expr->expr, numIndent + 1);
+      inprint(expr->ival, numIndent);
       break;
     default:
       std::cerr << "Unrecognized expression type " << expr->type << std::endl;
@@ -120,14 +157,24 @@ namespace hsql {
     inprint("Fields:", numIndent + 1);
     for (Expr* expr : *stmt->selectList) printExpression(expr, numIndent + 2);
 
-    inprint("Sources:", numIndent + 1);
-    printTableRefInfo(stmt->fromTable, numIndent + 2);
+    if (stmt->fromTable != nullptr) {
+      inprint("Sources:", numIndent + 1);
+      printTableRefInfo(stmt->fromTable, numIndent + 2);
+    }
 
     if (stmt->whereClause != nullptr) {
       inprint("Search Conditions:", numIndent + 1);
       printExpression(stmt->whereClause, numIndent + 2);
     }
 
+    if (stmt->groupBy != nullptr) {
+      inprint("GroupBy:", numIndent + 1);
+      for (Expr* expr : *stmt->groupBy->columns) printExpression(expr, numIndent + 2);
+      if (stmt->groupBy->having != nullptr) {
+        inprint("Having:", numIndent + 1);
+        printExpression(stmt->groupBy->having, numIndent + 2);
+      }
+    }
 
     if (stmt->unionSelect != nullptr) {
       inprint("Union:", numIndent + 1);

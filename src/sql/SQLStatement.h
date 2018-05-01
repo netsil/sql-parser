@@ -1,8 +1,9 @@
 #ifndef __SQLPARSER__SQLSTATEMENT_H__
 #define __SQLPARSER__SQLSTATEMENT_H__
 
-#include "Expr.h"
 #include <vector>
+
+#include "Expr.h"
 
 namespace hsql {
   enum StatementType {
@@ -18,7 +19,8 @@ namespace hsql {
     kStmtExecute,
     kStmtExport,
     kStmtRename,
-    kStmtAlter
+    kStmtAlter,
+    kStmtShow
   };
 
   // Base struct for every SQL statement
@@ -34,6 +36,9 @@ namespace hsql {
 
     // Shorthand for isType(type).
     bool is(StatementType type) const;
+
+    // Length of the string in the SQL query string
+    size_t stringLength;
 
     std::vector<Expr*>* hints;
 

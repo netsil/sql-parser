@@ -41,4 +41,10 @@ cmake-build-debug/
 *.cpp.orig
 *.h.orig
 
-benchmark/parser_benchmark
+# Vim Swap Files
+*.swp
+
+*.csv
+
+# macOS compilation dirs
+*.dSYM

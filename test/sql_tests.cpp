@@ -14,7 +14,7 @@ using namespace hsql;
 
 TEST(DeleteStatementTest) {
   SQLParserResult result;
-  SQLParser::parseSQLString("DELETE FROM students WHERE grade > 2.0;", &result);
+  SQLParser::parse("DELETE FROM students WHERE grade > 2.0;", &result);
 
   ASSERT(result.isValid());
   ASSERT_EQ(result.size(), 1);
@@ -30,7 +30,7 @@ TEST(DeleteStatementTest) {
 
 TEST(CreateStatementTest) {
   SQLParserResult result;
-  SQLParser::parseSQLString("CREATE TABLE students (name TEXT, student_number INT, city INTEGER, grade DOUBLE)", &result);
+  SQLParser::parse("CREATE TABLE students (name TEXT, student_number INT, city INTEGER, grade DOUBLE)", &result);
 
   ASSERT(result.isValid());
   ASSERT_EQ(result.size(), 1);
@@ -54,7 +54,7 @@ TEST(CreateStatementTest) {
 
 TEST(UpdateStatementTest) {
   SQLParserResult result;
-  SQLParser::parseSQLString("UPDATE students SET grade = 5.0, name = 'test' WHERE name = 'Max Mustermann';", &result);
+  SQLParser::parse("UPDATE students SET grade = 5.0, name = 'test' WHERE name = 'Max Mustermann';", &result);
 
   ASSERT(result.isValid());
   ASSERT_EQ(result.size(), 1);
@@ -102,6 +102,21 @@ TEST(DropTableStatementTest) {
     result,
     stmt);
 
+  ASSERT_FALSE(stmt->ifExists);
+  ASSERT_EQ(stmt->type, kDropTable);
+  ASSERT_NOTNULL(stmt->name);
+  ASSERT_STREQ(stmt->name, "students");
+}
+
+TEST(DropTableIfExistsStatementTest) {
+  TEST_PARSE_SINGLE_SQL(
+    "DROP TABLE IF EXISTS students",
+    kStmtDrop,
+    DropStatement,
+    result,
+    stmt);
+
+  ASSERT_TRUE(stmt->ifExists);
   ASSERT_EQ(stmt->type, kDropTable);
   ASSERT_NOTNULL(stmt->name);
   ASSERT_STREQ(stmt->name, "students");
@@ -127,10 +142,35 @@ TEST(ReleaseStatementTest) {
   }
 }
 
+TEST(ShowTableStatementTest) {
+  TEST_PARSE_SINGLE_SQL(
+    "SHOW TABLES;",
+    kStmtShow,
+    ShowStatement,
+    result,
+    stmt);
+
+  ASSERT_EQ(stmt->type, kShowTables);
+  ASSERT_NULL(stmt->name);
+}
+
+TEST(ShowColumnsStatementTest) {
+  TEST_PARSE_SINGLE_SQL(
+    "SHOW COLUMNS students;",
+    kStmtShow,
+    ShowStatement,
+    result,
+    stmt);
+
+  ASSERT_EQ(stmt->type, kShowColumns);
+  ASSERT_NOTNULL(stmt->name);
+  ASSERT_STREQ(stmt->name, "students");
+}
+
 
 SQLParserResult parse_and_move(std::string query) {
   hsql::SQLParserResult result;
-  hsql::SQLParser::parseSQLString(query, &result);
+  hsql::SQLParser::parse(query, &result);
   // Moves on return.
   return result;
 }
@@ -171,6 +211,17 @@ TEST(HintTest) {
   ASSERT_STREQ("SAMPLE_RATE", stmt->hints->at(1)->name);
   ASSERT_EQ(1, stmt->hints->at(1)->exprList->size());
   ASSERT_EQ(10, stmt->hints->at(1)->exprList->at(0)->ival);
+}
+
+TEST(StringLengthTest) {
+  TEST_PARSE_SQL_QUERY(
+    "SELECT * FROM bar; INSERT INTO foo VALUES (4);\t\n SELECT * FROM foo;",
+    result,
+    3);
+
+  ASSERT_EQ(result.getStatement(0)->stringLength, 18);
+  ASSERT_EQ(result.getStatement(1)->stringLength, 28);
+  ASSERT_EQ(result.getStatement(2)->stringLength, 21);
 }
 
 TEST_MAIN();

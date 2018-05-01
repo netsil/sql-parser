@@ -6,15 +6,20 @@
 
 namespace hsql {
 
-  Expr::Expr(ExprType type) :
-    type(type),
-    expr(nullptr),
-    expr2(nullptr),
-    exprList(nullptr),
-    select(nullptr),
-    name(nullptr),
-    table(nullptr),
-    alias(nullptr) {};
+  Expr::Expr(ExprType type)
+    : type(type),
+      expr(nullptr),
+      expr2(nullptr),
+      exprList(nullptr),
+      select(nullptr),
+      name(nullptr),
+      table(nullptr),
+      alias(nullptr),
+      fval(0),
+      ival(0),
+      ival2(0),
+      opType(kOpNone),
+      distinct(false) {};
 
   Expr::~Expr() {
     delete expr;
@@ -63,13 +68,37 @@ namespace hsql {
     return e;
   }
 
-  Expr* Expr::makeCase(Expr* expr, Expr* then, Expr* other) {
+  Expr* Expr::makeCaseList(Expr* caseListElement) {
     Expr* e = new Expr(kExprOperator);
-    e->expr = expr;
-    e->opType = kOpCase;
+    // Case list expressions are temporary and will be integrated into the case expressions exprList - thus assign
+    // operator type kOpNone
+    e->opType = kOpNone;
     e->exprList = new std::vector<Expr*>();
-    e->exprList->push_back(then);
-    e->exprList->push_back(other);
+    e->exprList->push_back(caseListElement);
+    return e;
+  }
+
+  Expr* Expr::makeCaseListElement(Expr* when, Expr* then) {
+    Expr* e = new Expr(kExprOperator);
+    e->opType = kOpCaseListElement;
+    e->expr = when;
+    e->expr2 = then;
+    return e;
+  }
+
+  Expr* Expr::caseListAppend(Expr* caseList, Expr* caseListElement) {
+    caseList->exprList->push_back(caseListElement);
+    return caseList;
+  }
+
+  Expr* Expr::makeCase(Expr* expr, Expr* caseList, Expr* elseExpr) {
+    Expr* e = new Expr(kExprOperator);
+    e->opType = kOpCase;
+    e->expr = expr;
+    e->expr2 = elseExpr;
+    e->exprList = caseList->exprList;
+    caseList->exprList = nullptr;
+    delete caseList;
     return e;
   }
 
@@ -91,6 +120,10 @@ namespace hsql {
     return e;
   }
 
+  Expr* Expr::makeNullLiteral() {
+    Expr* e = new Expr(kExprLiteralNull);
+    return e;
+  }
 
   Expr* Expr::makeColumnRef(char* name) {
     Expr* e = new Expr(kExprColumnRef);
@@ -105,11 +138,36 @@ namespace hsql {
     return e;
   }
 
-  Expr* Expr::makeFunctionRef(char* func_name, std::vector<Expr*>* exprList, bool distinct) {
+  Expr* Expr::makeStar(void) {
+    Expr* e = new Expr(kExprStar);
+    return e;
+  }
+
+  Expr* Expr::makeStar(char* table) {
+    Expr* e = new Expr(kExprStar);
+    e->table = table;
+    return e;
+  }
+
+  Expr* Expr::makeFunctionRef(char* func_name, std::vector<Expr*>* exprList,
+                              bool distinct) {
     Expr* e = new Expr(kExprFunctionRef);
     e->name = func_name;
     e->exprList = exprList;
     e->distinct = distinct;
+    return e;
+  }
+
+  Expr* Expr::makeArray(std::vector<Expr*>* exprList) {
+    Expr* e = new Expr(kExprArray);
+    e->exprList = exprList;
+    return e;
+  }
+
+  Expr* Expr::makeArrayIndex(Expr* expr, int64_t index) {
+    Expr* e = new Expr(kExprArrayIndex);
+    e->expr = expr;
+    e->ival = index;
     return e;
   }
 
@@ -155,7 +213,9 @@ namespace hsql {
   }
 
   bool Expr::isLiteral() const {
-    return isType(kExprLiteralInt) || isType(kExprLiteralFloat) || isType(kExprLiteralString) || isType(kExprParameter);
+    return isType(kExprLiteralInt) || isType(kExprLiteralFloat) ||
+           isType(kExprLiteralString) || isType(kExprParameter) ||
+           isType(kExprLiteralNull);
   }
 
   bool Expr::hasAlias() const {
@@ -167,15 +227,18 @@ namespace hsql {
   }
 
   const char* Expr::getName() const {
-    if (alias != nullptr) return alias;
-    else return name;
+    if (alias != nullptr)
+      return alias;
+    else
+      return name;
   }
 
   char* substr(const char* source, int from, int to) {
     int len = to - from;
-    char* copy = (char*) malloc(len + 1);;
+    char* copy = (char*)malloc(len + 1);
+    ;
     strncpy(copy, source + from, len);
     copy[len] = '\0';
     return copy;
   }
-} // namespace hsql
+}  // namespace hsql

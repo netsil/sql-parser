@@ -48,7 +48,7 @@
 extern int hsql_debug;
 #endif
 /* "%code requires" blocks.  */
-#line 34 "bison_parser.y" /* yacc.c:1915  */
+#line 35 "bison_parser.y" /* yacc.c:1909  */
 
 // %code requires block
 
@@ -62,6 +62,7 @@ extern int hsql_debug;
 		yylloc->first_column = yylloc->last_column; \
 		for(int i = 0; yytext[i] != '\0'; i++) { \
 			yylloc->total_column++; \
+			yylloc->string_length++; \
 				if(yytext[i] == '\n') { \
 						yylloc->last_line++; \
 						yylloc->last_column = 0; \
@@ -71,7 +72,7 @@ extern int hsql_debug;
 				} \
 		}
 
-#line 75 "bison_parser.h" /* yacc.c:1915  */
+#line 76 "bison_parser.h" /* yacc.c:1909  */
 
 /* Token type.  */
 #ifndef HSQL_TOKENTYPE
@@ -198,14 +199,17 @@ extern int hsql_debug;
     SQL_ON = 375,
     SQL_OR = 376,
     SQL_TO = 377,
-    SQL_EQUALS = 378,
-    SQL_NOTEQUALS = 379,
-    SQL_LESS = 380,
-    SQL_GREATER = 381,
-    SQL_LESSEQ = 382,
-    SQL_GREATEREQ = 383,
-    SQL_NOTNULL = 384,
-    SQL_UMINUS = 385
+    SQL_ARRAY = 378,
+    SQL_CONCAT = 379,
+    SQL_ILIKE = 380,
+    SQL_EQUALS = 381,
+    SQL_NOTEQUALS = 382,
+    SQL_LESS = 383,
+    SQL_GREATER = 384,
+    SQL_LESSEQ = 385,
+    SQL_GREATEREQ = 386,
+    SQL_NOTNULL = 387,
+    SQL_UMINUS = 388
   };
 #endif
 
@@ -214,7 +218,7 @@ extern int hsql_debug;
 
 union HSQL_STYPE
 {
-#line 92 "bison_parser.y" /* yacc.c:1915  */
+#line 95 "bison_parser.y" /* yacc.c:1909  */
 
 	double fval;
 	int64_t ival;
@@ -232,7 +236,9 @@ union HSQL_STYPE
 	hsql::DropStatement*   	drop_stmt;
 	hsql::PrepareStatement* prep_stmt;
 	hsql::ExecuteStatement* exec_stmt;
+	hsql::ShowStatement*    show_stmt;
 
+	hsql::TableName table_name;
 	hsql::TableRef* table;
 	hsql::Expr* expr;
 	hsql::OrderDescription* order;
@@ -241,6 +247,7 @@ union HSQL_STYPE
 	hsql::ColumnDefinition* column_t;
 	hsql::GroupByDescription* group_t;
 	hsql::UpdateClause* update_t;
+	hsql::Alias* alias_t;
 
 	std::vector<hsql::SQLStatement*>* stmt_vec;
 
@@ -251,7 +258,7 @@ union HSQL_STYPE
 	std::vector<hsql::Expr*>* expr_vec;
 	std::vector<hsql::OrderDescription*>* order_vec;
 
-#line 255 "bison_parser.h" /* yacc.c:1915  */
+#line 262 "bison_parser.h" /* yacc.c:1909  */
 };
 
 typedef union HSQL_STYPE HSQL_STYPE;
